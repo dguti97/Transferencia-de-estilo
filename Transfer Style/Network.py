@@ -1,16 +1,13 @@
 from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
-
 # from scipy.misc import imread, imresize, imsave, fromimage, toimage
 from utils import imread, imresize, imsave, fromimage, toimage
-
 from scipy.optimize import fmin_l_bfgs_b
 import numpy as np
 import time
 import argparse
 import warnings
-
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input
 from tensorflow.python.keras.layers.convolutional import Convolution2D, AveragePooling2D, MaxPooling2D
@@ -18,17 +15,7 @@ from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.utils.data_utils import get_file
 from tensorflow.python.keras.utils.layer_utils import convert_all_kernels_in_model
 
-"""
-Neural Style Transfer with Keras 2.0.5
 
-Based on:
-https://github.com/keras-team/keras-io/blob/master/examples/generative/neural_style_transfer.py
-
------------------------------------------------------------------------------------------------------------------------
-"""
-
-THEANO_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_th_dim_ordering_th_kernels_notop.h5'
-TF_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
 TH_19_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg19_weights_th_dim_ordering_th_kernels_notop.h5'
 TF_19_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5'
@@ -278,7 +265,7 @@ if K.image_data_format() == "channels_first":
 else:
     shape = (nb_tensors, img_width, img_height, 3)
 
-ip = Input(tensor=input_tensor, batch_shape=shape)
+input_model = Input(tensor=input_tensor, batch_shape=shape)
 
 # build the VGG16 network with our 3 images as input
 x = Convolution2D(64, (3, 3), activation='relu', name='conv1_1', padding='same')(ip)
@@ -310,18 +297,14 @@ if args.model == "vgg19":
     x = Convolution2D(512, (3, 3), activation='relu', name='conv5_4', padding='same')(x)
 x = pooling_func(x)
 
-model = Model(ip, x)
+model = Model(input_model, x)
 
 if K.image_data_format() == "channels_first":
     if args.model == "vgg19":
         weights = get_file('vgg19_weights_th_dim_ordering_th_kernels_notop.h5', TH_19_WEIGHTS_PATH_NO_TOP, cache_subdir='models')
-    else:
-        weights = get_file('vgg16_weights_th_dim_ordering_th_kernels_notop.h5', THEANO_WEIGHTS_PATH_NO_TOP, cache_subdir='models')
 else:
     if args.model == "vgg19":
         weights = get_file('vgg19_weights_tf_dim_ordering_tf_kernels_notop.h5', TF_19_WEIGHTS_PATH_NO_TOP, cache_subdir='models')
-    else:
-        weights = get_file('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5', TF_WEIGHTS_PATH_NO_TOP, cache_subdir='models')
 
 model.load_weights(weights)
 
@@ -335,17 +318,14 @@ if K.backend() == 'tensorflow' and K.image_data_format() == "channels_first":
                   'your Keras config '
                   'at ~/.keras/keras.json.')
     convert_all_kernels_in_model(model)
-
 print('Model loaded.')
 
 # get the symbolic outputs of each "key" layer (we gave them unique names).
 outputs_dict = dict([(layer.name, layer.output) for layer in model.layers])
 shape_dict = dict([(layer.name, layer.output_shape) for layer in model.layers])
 
-# compute the neural style loss
-# first we need to define 4 util functions
 
-# the gram matrix of an image tensor (feature-wise outer product)
+# Gram matrix para una imagen
 def gram_matrix(x):
     assert K.ndim(x) == 3
     if K.image_data_format() == "channels_first":
@@ -356,11 +336,7 @@ def gram_matrix(x):
     return gram
 
 
-# the "style loss" is designed to maintain
-# the style of the reference image in the generated image.
-# It is based on the gram matrices (which capture style) of
-# feature maps from the style reference image
-# and from the generated image
+##Pérdida de estilo
 def style_loss(style, combination, mask_path=None, nb_channels=None):
     assert K.ndim(style) == 3
     assert K.ndim(combination) == 3
@@ -371,9 +347,8 @@ def style_loss(style, combination, mask_path=None, nb_channels=None):
     return K.sum(K.square(S - C)) / (4. * (channels ** 2) * (size ** 2))
 
 
-# an auxiliary loss function
-# designed to maintain the "content" of the
-# base image in the generated image
+
+#Loss de contenido
 def content_loss(base, combination):
     channel_dim = 0 if K.image_data_format() == "channels_first" else -1
 
@@ -391,19 +366,6 @@ def content_loss(base, combination):
         multiplier = 1.
 
     return multiplier * K.sum(K.square(combination - base))
-
-
-# the 3rd loss function, total variation loss,
-# designed to keep the generated image locally coherent
-def total_variation_loss(x):
-    assert K.ndim(x) == 4
-    if K.image_data_format() == "channels_first":
-        a = K.square(x[:, :, :img_width - 1, :img_height - 1] - x[:, :, 1:, :img_height - 1])
-        b = K.square(x[:, :, :img_width - 1, :img_height - 1] - x[:, :, :img_width - 1, 1:])
-    else:
-        a = K.square(x[:, :img_width - 1, :img_height - 1, :] - x[:, 1:, :img_height - 1, :])
-        b = K.square(x[:, :img_width - 1, :img_height - 1, :] - x[:, :img_width - 1, 1:, :])
-    return K.sum(K.pow(a + b, 1.25))
 
 
 # combine these loss functions into a single scalar
@@ -434,8 +396,6 @@ for layer_name in feature_layers:
 
     for j in range(nb_style_images):
         loss = loss + (style_weights[j] / len(feature_layers)) * sl[j]
-
-loss = loss + total_variation_weight * total_variation_loss(combination_image)
 
 # get the gradients of the generated image wrt the loss
 grads = K.gradients(loss, combination_image)
